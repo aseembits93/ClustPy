@@ -1,7 +1,6 @@
 from sklearn.base import ClusterMixin
 import inspect
 import torch
-from itertools import islice
 import numpy as np
 import random
 from sklearn.metrics.pairwise import pairwise_distances_argmin_min
@@ -31,8 +30,9 @@ def set_torch_seed(random_state: np.random.RandomState | int) -> None:
     random.seed(seed)
 
 
-def squared_euclidean_distance(tensor1: torch.Tensor, tensor2: torch.Tensor,
-                               weights: torch.Tensor = None) -> torch.Tensor:
+def squared_euclidean_distance(
+    tensor1: torch.Tensor, tensor2: torch.Tensor, weights: torch.Tensor = None
+) -> torch.Tensor:
     """
     Calculate the pairwise squared Euclidean distance between two tensors.
     Each row in the tensors is interpreted as a separate object, while each column represents its features.
@@ -54,16 +54,16 @@ def squared_euclidean_distance(tensor1: torch.Tensor, tensor2: torch.Tensor,
     squared_diffs : torch.Tensor
         the pairwise squared Euclidean distances
     """
-    assert tensor1.shape[1] == tensor2.shape[1], "The number of features of the two input tensors must match."
-    ta = tensor1.unsqueeze(1)
-    tb = tensor2.unsqueeze(0)
-    squared_diffs = (ta - tb)
+    assert tensor1.shape[1] == tensor2.shape[1], (
+        "The number of features of the two input tensors must match."
+    )
+    squared_diffs = tensor1.unsqueeze(1) - tensor2.unsqueeze(0)
     if weights is not None:
-        assert tensor1.shape[1] == weights.shape[0]
-        weights_unsqueezed = weights.unsqueeze(0).unsqueeze(1)
-        squared_diffs = squared_diffs * weights_unsqueezed
-    squared_diffs = squared_diffs.pow(2).sum(2)
-    return squared_diffs
+        assert tensor1.shape[1] == weights.shape[0], (
+            "The number of weights must match the number of features."
+        )
+        squared_diffs *= weights.unsqueeze(0).unsqueeze(1)
+    return squared_diffs.pow(2).sum(2)
 
 
 def detect_device(device: torch.device | int | str = None) -> torch.device:
@@ -82,10 +82,15 @@ def detect_device(device: torch.device | int | str = None) -> torch.device:
     device : torch.device
         device on which the prediction should take place
     """
-    assert device is None or type(device) is torch.device or type(device) is int or type(device) is str, "device must be None or of type torch.device, int or str"
+    assert (
+        device is None
+        or type(device) is torch.device
+        or type(device) is int
+        or type(device) is str
+    ), "device must be None or of type torch.device, int or str"
     if device == -1:
         # Special case
-        device = torch.device('cpu')
+        device = torch.device("cpu")
     elif device is None:
         env_device = os.environ.get("CLUSTPY_DEVICE", None)
         # Check if environment device is None - in that case CLUSTPY_DEVICE has not been specified
@@ -93,16 +98,25 @@ def detect_device(device: torch.device | int | str = None) -> torch.device:
             if torch.cuda.is_available():
                 # Try to automatically identify best GPU
                 try:
-                    shell_output = (subprocess.check_output("nvidia-smi -q -d Utilization |grep Memory", shell=True)).decode('utf-8')[:-1]
+                    shell_output = (
+                        subprocess.check_output(
+                            "nvidia-smi -q -d Utilization |grep Memory", shell=True
+                        )
+                    ).decode("utf-8")[:-1]
                     entries = shell_output.split("\n")[::2]
-                    used_memory = [int(e.split(":")[1].replace(" %", "")) for e in entries]
+                    used_memory = [
+                        int(e.split(":")[1].replace(" %", "")) for e in entries
+                    ]
                     device = torch.device("cuda:{0}".format(np.argmin(used_memory)))
-                    print(device, "was automatically chosen as device for the computation.")
+                    print(
+                        device,
+                        "was automatically chosen as device for the computation.",
+                    )
                 except Exception:
                     # Default: Use first available GPU
-                    device = torch.device('cuda')
+                    device = torch.device("cuda")
             else:
-                device = torch.device('cpu')
+                device = torch.device("cpu")
         else:
             device = torch.device(env_device)
     elif type(device) is int or type(device) is str:
@@ -126,13 +140,15 @@ def get_device_from_module(neural_network: torch.nn.Module) -> torch.device:
     """
     example_param = next(neural_network.parameters())
     if example_param.is_cuda:
-        device = torch.device('cuda:' + str(example_param.get_device()))
+        device = torch.device("cuda:" + str(example_param.get_device()))
     else:
-        device = torch.device('cpu')
+        device = torch.device("cpu")
     return device
 
 
-def encode_batchwise(dataloader: torch.utils.data.DataLoader, neural_network: torch.nn.Module) -> np.ndarray:
+def encode_batchwise(
+    dataloader: torch.utils.data.DataLoader, neural_network: torch.nn.Module
+) -> np.ndarray:
     """
     Utility function for embedding the whole data set in a mini-batch fashion
 
@@ -161,7 +177,9 @@ def encode_batchwise(dataloader: torch.utils.data.DataLoader, neural_network: to
     return embeddings_numpy
 
 
-def decode_batchwise(dataloader: torch.utils.data.DataLoader, neural_network: torch.nn.Module) -> np.ndarray:
+def decode_batchwise(
+    dataloader: torch.utils.data.DataLoader, neural_network: torch.nn.Module
+) -> np.ndarray:
     """
     Utility function for decoding the whole data set in a mini-batch fashion, e.g., with an autoencoder.
     Note: Assumes an implemented decode function
@@ -195,8 +213,9 @@ def decode_batchwise(dataloader: torch.utils.data.DataLoader, neural_network: to
     return reconstructions_numpy
 
 
-def encode_decode_batchwise(dataloader: torch.utils.data.DataLoader, neural_network: torch.nn.Module) -> (
-        np.ndarray, np.ndarray):
+def encode_decode_batchwise(
+    dataloader: torch.utils.data.DataLoader, neural_network: torch.nn.Module
+) -> (np.ndarray, np.ndarray):
     """
     Utility function for encoding and decoding the whole data set in a mini-batch fashion, e.g., with an autoencoder.
     Note: Assumes an implemented decode function
@@ -227,8 +246,11 @@ def encode_decode_batchwise(dataloader: torch.utils.data.DataLoader, neural_netw
     return embeddings_numpy, reconstructions_numpy
 
 
-def predict_batchwise(dataloader: torch.utils.data.DataLoader, neural_network: torch.nn.Module,
-                      cluster_module: torch.nn.Module) -> np.ndarray:
+def predict_batchwise(
+    dataloader: torch.utils.data.DataLoader,
+    neural_network: torch.nn.Module,
+    cluster_module: torch.nn.Module,
+) -> np.ndarray:
     """
     Utility function for predicting the cluster labels over the whole data set in a mini-batch fashion.
     Method calls the predict_hard method of the cluster_module for each batch of data.
@@ -251,7 +273,11 @@ def predict_batchwise(dataloader: torch.utils.data.DataLoader, neural_network: t
     predictions = []
     for batch in dataloader:
         batch_data = batch[1].to(device)
-        prediction = cluster_module.predict_hard(neural_network.encode(batch_data)).detach().cpu()
+        prediction = (
+            cluster_module.predict_hard(neural_network.encode(batch_data))
+            .detach()
+            .cpu()
+        )
         predictions.append(prediction)
     predictions_numpy = torch.cat(predictions, dim=0).numpy()
     return predictions_numpy
@@ -286,12 +312,16 @@ def int_to_one_hot(int_tensor: torch.Tensor, n_integers: int) -> torch.Tensor:
     onehot : torch.Tensor
         The final one hot encoding tensor
     """
-    onehot = torch.zeros([int_tensor.shape[0], n_integers], dtype=torch.float, device=int_tensor.device)
+    onehot = torch.zeros(
+        [int_tensor.shape[0], n_integers], dtype=torch.float, device=int_tensor.device
+    )
     onehot.scatter_(1, int_tensor.unsqueeze(1).long(), 1)
     return onehot
 
 
-def embedded_kmeans_prediction(X_embed: np.ndarray, cluster_centers: np.ndarray) -> np.ndarray:
+def embedded_kmeans_prediction(
+    X_embed: np.ndarray, cluster_centers: np.ndarray
+) -> np.ndarray:
     """
     Predicts the labels of the given embedded data.
     Labels correspond to the id of the closest cluster center.
@@ -308,14 +338,23 @@ def embedded_kmeans_prediction(X_embed: np.ndarray, cluster_centers: np.ndarray)
     predicted_labels : np.ndarray
         The predicted labels
     """
-    predicted_labels, _ = pairwise_distances_argmin_min(X=X_embed, Y=cluster_centers, metric='euclidean',
-                                                        metric_kwargs={'squared': True})
+    predicted_labels, _ = pairwise_distances_argmin_min(
+        X=X_embed,
+        Y=cluster_centers,
+        metric="euclidean",
+        metric_kwargs={"squared": True},
+    )
     predicted_labels = predicted_labels.astype(np.int32)
     return predicted_labels
 
 
-def run_initial_clustering(X: np.ndarray, n_clusters: int, clustering_class: ClusterMixin, clustering_params: dict,
-                           random_state: np.random.RandomState) -> (int, np.ndarray, np.ndarray, ClusterMixin):
+def run_initial_clustering(
+    X: np.ndarray,
+    n_clusters: int,
+    clustering_class: ClusterMixin,
+    clustering_params: dict,
+    random_state: np.random.RandomState,
+) -> (int, np.ndarray, np.ndarray, ClusterMixin):
     """
     Get an initial clustering result for a deep clustering algorithm.
     This result can then be refined by the optimization of the neural network.
@@ -347,22 +386,47 @@ def run_initial_clustering(X: np.ndarray, n_clusters: int, clustering_class: Clu
         clustering_algo.labels_ = np.random.randint(n_clusters, size=X.shape[0])
     else:
         # Get possible input parameters of the clustering algorithm
-        clustering_class_parameters = inspect.getfullargspec(clustering_class).args + inspect.getfullargspec(
-            clustering_class).kwonlyargs
+        clustering_class_parameters = (
+            inspect.getfullargspec(clustering_class).args
+            + inspect.getfullargspec(clustering_class).kwonlyargs
+        )
         # Check if n_clusters or n_components is contained in the possible parameters
         if "n_clusters" in clustering_class_parameters:
-            if "random_state" in clustering_class_parameters and "random_state" not in clustering_params.keys():
-                clustering_algo = clustering_class(n_clusters=n_clusters, random_state=random_state, **clustering_params)
+            if (
+                "random_state" in clustering_class_parameters
+                and "random_state" not in clustering_params.keys()
+            ):
+                clustering_algo = clustering_class(
+                    n_clusters=n_clusters,
+                    random_state=random_state,
+                    **clustering_params,
+                )
             else:
-                clustering_algo = clustering_class(n_clusters=n_clusters, **clustering_params)
+                clustering_algo = clustering_class(
+                    n_clusters=n_clusters, **clustering_params
+                )
         elif "n_components" in clustering_class_parameters:  # in case of GMM
-            if "random_state" in clustering_class_parameters and "random_state" not in clustering_params.keys():
-                clustering_algo = clustering_class(n_components=n_clusters, random_state=random_state, **clustering_params)
+            if (
+                "random_state" in clustering_class_parameters
+                and "random_state" not in clustering_params.keys()
+            ):
+                clustering_algo = clustering_class(
+                    n_components=n_clusters,
+                    random_state=random_state,
+                    **clustering_params,
+                )
             else:
-                clustering_algo = clustering_class(n_components=n_clusters, **clustering_params)
+                clustering_algo = clustering_class(
+                    n_components=n_clusters, **clustering_params
+                )
         else:  # in case of e.g., DBSCAN
-            if "random_state" in clustering_class_parameters and "random_state" not in clustering_params.keys():
-                clustering_algo = clustering_class(random_state=random_state, **clustering_params)
+            if (
+                "random_state" in clustering_class_parameters
+                and "random_state" not in clustering_params.keys()
+            ):
+                clustering_algo = clustering_class(
+                    random_state=random_state, **clustering_params
+                )
             else:
                 clustering_algo = clustering_class(**clustering_params)
         # Run algorithm
@@ -376,6 +440,10 @@ def run_initial_clustering(X: np.ndarray, n_clusters: int, clustering_class: Clu
         centers = clustering_algo.means_
     else:  # in case of e.g., DBSCAN
         labels = clustering_algo.labels_
-        centers = np.array([np.mean(X[labels == i], axis=0) for i in np.unique(labels) if i >= 0])
-    n_clusters = np.sum(np.unique(labels) >= 0)  # Needed for DBSCAN, XMeans, GMeans, ...
+        centers = np.array(
+            [np.mean(X[labels == i], axis=0) for i in np.unique(labels) if i >= 0]
+        )
+    n_clusters = np.sum(
+        np.unique(labels) >= 0
+    )  # Needed for DBSCAN, XMeans, GMeans, ...
     return n_clusters, labels, centers, clustering_algo
